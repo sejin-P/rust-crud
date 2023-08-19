@@ -6,3 +6,13 @@
 3. CRUD of a simple entity: User
 4. CRUD of a simple entity: Post
 
+
+
+## Processes
+1. 08/19/2023: Connect to database(mysql), add GET user api
+
+
+
+## TODOS
+1. Refactoring - divide dependencies into modules
+
