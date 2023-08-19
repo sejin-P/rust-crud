@@ -15,4 +15,5 @@
 
 ## TODOS
 1. Refactoring - divide dependencies into modules
+2. Unit Tests
 
