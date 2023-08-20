@@ -51,6 +51,19 @@ async fn create_user(web::Json(user_data): web::Json<User>, data: web::Data<Pool
     return Ok(HttpResponse::NoContent())
 }
 
+#[put("/user/{id}")]
+async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+    let name = user_data.name;
+    let age = user_data.age;
+
+    conn.exec_drop(format!("UPDATE user SET name = '{name}', age = {age} WHERE id = {user_id};"), ()).expect("failed to update user");
+
+    return Ok(HttpResponse::NoContent())
+}
+
 async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
@@ -70,6 +83,7 @@ async fn main() -> std::io::Result<()> {
             .service(echo)
             .service(get_user)
             .service(create_user)
+            .service(update_user)
             .route("/", web::get().to(manual_hello))
     })
         .bind(("127.0.0.1", 8080))?
