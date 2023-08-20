@@ -16,8 +16,10 @@
 
 
 ## TODOS
-1. Refactoring - divide dependencies into modules
-2. Unit Tests
+1. Exception handling
+2. ADD middlewares
+3. Refactoring - divide dependencies into modules
+4. Unit Tests
 
 
 
