@@ -1,8 +1,7 @@
-use std::future::Future;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest};
 use mysql::Pool;
 use mysql::prelude::Queryable;
-use mysql::serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -25,9 +24,9 @@ pub struct User {
 }
 
 #[get("/user/{id}")]
-async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> impl Responder {
+async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
     let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
-    let mut conn = data.get_conn()?;
+    let mut conn = data.get_conn().expect("failed to get connection");
 
     let user: User = conn.query_map("SELECT name, email, age FROM user;", |(name, email, age)| {
         User {
@@ -36,9 +35,9 @@ async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> impl Responder {
             email,
             age,
         }
-    })?.pop().unwrap();
+    }).expect("failed to get user").pop().unwrap();
 
-    Ok(web::Json(user))
+    return Ok(web::Json(user))
 }
 
 async fn manual_hello() -> impl Responder {
@@ -48,11 +47,14 @@ async fn manual_hello() -> impl Responder {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // TODO make it config var(read from env), dependency injection practically
-    let url = "mysql://root:password@localhost:3307/db_name";
-    let pool = Pool::new(url)?;
+    let url = "mysql://root:password@localhost:3306/abc";
+    let pool = Pool::new(url).expect("failed to create pool");
+    let shared_data = web::Data::new(pool);
 
-    HttpServer::new(|| {
+    // to force the closure to take ownership of `shared_data` (and any other referenced variables), use the `move` keyword
+    HttpServer::new(move || {
         App::new()
+            .app_data(shared_data.clone())
             .service(hello)
             .service(echo)
             .service(get_user)
