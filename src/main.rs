@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, put};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, put, delete};
 use mysql::Pool;
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
@@ -64,6 +64,17 @@ async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, da
     return Ok(HttpResponse::NoContent())
 }
 
+#[delete("/user/{id}")]
+async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+
+    conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).expect("failed to delete user");
+
+    return Ok(HttpResponse::NoContent())
+}
+
 async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
@@ -84,6 +95,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_user)
             .service(create_user)
             .service(update_user)
+            .service(delete_user)
             .route("/", web::get().to(manual_hello))
     })
         .bind(("127.0.0.1", 8080))?
