@@ -11,7 +11,7 @@
 ## Processes
 1. 08/19/2023: Connect to database(mysql), add GET user api
 2. 08/20/2023: Fix compile errors in 1, Add POST, DELETE, PUT user api
-3. 
+3. 08/26/2023: CRUD of Post entity
 
 
 
@@ -20,6 +20,7 @@
 2. ADD middlewares
 3. Refactoring - divide dependencies into modules
 4. Unit Tests
+5. Use multithreading + async/await even it's not necessary
 
 
 
