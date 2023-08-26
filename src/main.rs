@@ -23,6 +23,23 @@ pub struct User {
     pub age: u8,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct Post {
+    pub title: String,
+    pub body: String,
+    pub user_id: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[allow(non_snake_case)]
+pub struct PostUser {
+    pub title: String,
+    pub body: String,
+    pub user_name: String,
+    pub user_email: String,
+}
+
 #[get("/user/{id}")]
 async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
     let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
@@ -73,6 +90,38 @@ async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Resu
     conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).expect("failed to delete user");
 
     return Ok(HttpResponse::NoContent())
+}
+
+#[get("/posts/{id}")]
+async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let post_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    // TODO query pipelining or something optimization thing
+    let post: Post = conn.query_map(format!("SELECT title, body, user_id FROM post WHERE id = {post_id};"), |(title, body, user_id)| {
+        Post {
+            title,
+            body,
+            user_id,
+        }
+    }).expect("failed to get post").pop().unwrap();
+
+    let user: User = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {};", post.user_id), |(name, email, age)| {
+        User {
+            name,
+            email,
+            age,
+        }
+    }).expect("failed to get user").pop().unwrap();
+
+    let post_user: PostUser = PostUser{
+        title: post.title,
+        body: post.body,
+        user_name: user.name,
+        user_email: user.email,
+    };
+
+    return Ok(web::Json(post_user))
 }
 
 async fn manual_hello() -> impl Responder {
