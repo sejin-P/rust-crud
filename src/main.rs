@@ -145,6 +145,7 @@ async fn main() -> std::io::Result<()> {
             .service(create_user)
             .service(update_user)
             .service(delete_user)
+            .service(get_post)
             .route("/", web::get().to(manual_hello))
     })
         .bind(("127.0.0.1", 8080))?

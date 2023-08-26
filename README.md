@@ -21,6 +21,7 @@
 3. Refactoring - divide dependencies into modules
 4. Unit Tests
 5. Use multithreading + async/await even it's not necessary
+6. Add hot reload
 
 
 
