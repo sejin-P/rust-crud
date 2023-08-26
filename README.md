@@ -22,6 +22,7 @@
 4. Unit Tests
 5. Use multithreading + async/await even it's not necessary
 6. Add hot reload
+7. Add auth
 
 
 

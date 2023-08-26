@@ -1,4 +1,5 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, put, delete};
+use actix_web::web::post;
 use mysql::Pool;
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
@@ -65,7 +66,7 @@ async fn create_user(web::Json(user_data): web::Json<User>, data: web::Data<Pool
 
     conn.exec_drop(format!("INSERT INTO user (name, email, age) VALUES ('{name}', '{email}', {age});"), ()).expect("failed to insert user");
 
-    return Ok(HttpResponse::NoContent())
+    return Ok(HttpResponse::Created())
 }
 
 #[put("/user/{id}")]
@@ -78,7 +79,7 @@ async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, da
 
     conn.exec_drop(format!("UPDATE user SET name = '{name}', age = {age} WHERE id = {user_id};"), ()).expect("failed to update user");
 
-    return Ok(HttpResponse::NoContent())
+    return Ok(HttpResponse::Ok())
 }
 
 #[delete("/user/{id}")]
@@ -89,7 +90,7 @@ async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Resu
 
     conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).expect("failed to delete user");
 
-    return Ok(HttpResponse::NoContent())
+    return Ok(HttpResponse::Ok())
 }
 
 #[get("/posts/{id}")]
@@ -124,6 +125,38 @@ async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
     return Ok(web::Json(post_user))
 }
 
+#[post("/posts")]
+async fn create_post(web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    conn.exec_drop(format!("INSERT INTO post (title, body, user_id) VALUES ('{}', '{}', '{}');", post_data.title, post_data.body, post_data.user_id), ()).expect("failed to create post");
+
+    return Ok(HttpResponse::Created())
+}
+
+// TODO add auth especially
+#[put("/posts/{id}")]
+async fn update_post(req: HttpRequest, web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    let post_id: u64 = req.match_info().get("id").unwrap().parse::<u64>().unwrap();
+
+    conn.exec_drop(format!("UPDATE post SET title = '{}', body = '{}' WHERE id = {};", post_data.title, post_data.body, post_id), ()).expect("failed to update");
+
+    return Ok(HttpResponse::Ok())
+}
+
+#[delete("/posts/{id}")]
+async fn delete_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
+    let mut conn = data.get_conn().expect("failed to get connection");
+
+    let post_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+
+    conn.exec_drop(format!("DELETE FROM post WHERE id = {post_id};"), ()).expect("failed to delete");
+
+    return Ok(HttpResponse::Ok())
+}
+
 async fn manual_hello() -> impl Responder {
     HttpResponse::Ok().body("Hey there!")
 }
@@ -146,6 +179,9 @@ async fn main() -> std::io::Result<()> {
             .service(update_user)
             .service(delete_user)
             .service(get_post)
+            .service(create_post)
+            .service(update_post)
+            .service(delete_post)
             .route("/", web::get().to(manual_hello))
     })
         .bind(("127.0.0.1", 8080))?
