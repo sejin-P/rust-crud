@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, http::{header::ContentType, StatusCode}, put, delete, error};
+use actix_web::middleware::Logger;
 use mysql::{Pool};
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
@@ -47,8 +48,8 @@ pub struct PostUser {
 enum UserError {
     #[display(fmt = "An internal error occurred. Please try again later.")]
     InternalError,
-    #[display(fmt = "Could not find data.")]
-    NotFoundError,
+    #[display(fmt = "Could not find data of {}, id {}.", name, id)]
+    NotFoundError {name: &'static str, id: u64 },
     #[display(fmt = "Invalid request.")]
     ValidationError,
     #[display(fmt = "Unauthorized.")]
@@ -59,7 +60,7 @@ impl error::ResponseError for UserError {
     fn status_code(&self) -> StatusCode {
         match *self {
             UserError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            UserError::NotFoundError => StatusCode::NOT_FOUND,
+            UserError::NotFoundError{name, id} => StatusCode::NOT_FOUND,
             UserError::ValidationError => StatusCode::BAD_REQUEST,
             UserError::UnauthorizedError => StatusCode::UNAUTHORIZED,
         }
@@ -87,7 +88,7 @@ async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
             email,
             age,
         }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "user", id: user_id}).map_err(|e| e)?;
 
     return Ok(web::Json(user))
 }
@@ -140,7 +141,7 @@ async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
             body,
             user_id,
         }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "post", id: post_id}).map_err(|e| e)?;
 
     let user: User = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {};", post.user_id), |(name, email, age)| {
         User {
@@ -148,7 +149,7 @@ async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
             email,
             age,
         }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "user", id: post.user_id}).map_err(|e| e)?;
 
     let post_user: PostUser = PostUser{
         title: post.title,
@@ -197,6 +198,9 @@ async fn manual_hello() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    std::env::set_var("RUST_LOG", "info");
+    std::env::set_var("RUST_BACKTRACE", "1");
+    env_logger::init();
     // TODO make it config var(read from env), dependency injection practically
     let url = "mysql://root:password@localhost:3306/abc";
     let pool = Pool::new(url).expect("failed to create pool");
@@ -204,7 +208,9 @@ async fn main() -> std::io::Result<()> {
 
     // to force the closure to take ownership of `shared_data` (and any other referenced variables), use the `move` keyword
     HttpServer::new(move || {
+        let logger = Logger::default();
         App::new()
+            .wrap(logger)
             .app_data(shared_data.clone())
             .service(hello)
             .service(echo)
