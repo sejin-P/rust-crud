@@ -1,8 +1,9 @@
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, put, delete};
-use actix_web::web::post;
-use mysql::Pool;
+use std::fmt::Display;
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, http::{header::ContentType, StatusCode}, put, delete, error};
+use mysql::{Pool};
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
+use derive_more::{Display, Error};
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -41,71 +42,105 @@ pub struct PostUser {
     pub user_email: String,
 }
 
-#[get("/user/{id}")]
-async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
-    let mut conn = data.get_conn().expect("failed to get connection");
 
-    let user: User = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {user_id};"), |(name, email, age)| {
+#[derive(Debug, Display, Error)]
+enum UserError {
+    #[display(fmt = "An internal error occurred. Please try again later.")]
+    InternalError,
+    #[display(fmt = "Could not find data.")]
+    NotFoundError,
+    #[display(fmt = "Invalid request.")]
+    ValidationError,
+    #[display(fmt = "Unauthorized.")]
+    UnauthorizedError,
+}
+
+impl error::ResponseError for UserError {
+    fn status_code(&self) -> StatusCode {
+        match *self {
+            UserError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            UserError::NotFoundError => StatusCode::NOT_FOUND,
+            UserError::ValidationError => StatusCode::BAD_REQUEST,
+            UserError::UnauthorizedError => StatusCode::UNAUTHORIZED,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(self.status_code())
+            .insert_header(ContentType::html())
+            .body(self.to_string())
+    }
+}
+
+fn handle_sql_err(e: mysql::Error) -> UserError {
+    return UserError::InternalError
+}
+
+#[get("/user/{id}")]
+async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
+
+    let user = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {user_id};"), |(name, email, age)| {
         User {
             name,
             email,
             age,
         }
-    }).expect("failed to get user").pop().unwrap();
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
 
     return Ok(web::Json(user))
 }
 
 #[post("/user")]
-async fn create_user(web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn create_user(web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
     let name = user_data.name;
     let email = user_data.email;
     let age = user_data.age;
 
-    conn.exec_drop(format!("INSERT INTO user (name, email, age) VALUES ('{name}', '{email}', {age});"), ()).expect("failed to insert user");
+    conn.exec_drop(format!("INSERT INTO user (name, email, age) VALUES ('{name}', '{email}', {age});"), ()).map_err(|e| UserError::InternalError)?;
 
     return Ok(HttpResponse::Created())
 }
 
 #[put("/user/{id}")]
-async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|_| UserError::InternalError)?;
     let name = user_data.name;
     let age = user_data.age;
 
-    conn.exec_drop(format!("UPDATE user SET name = '{name}', age = {age} WHERE id = {user_id};"), ()).expect("failed to update user");
+    conn.exec_drop(format!("UPDATE user SET name = '{name}', age = {age} WHERE id = {user_id};"), ()).map_err(|e| UserError::InternalError)?;
 
     return Ok(HttpResponse::Ok())
 }
 
 #[delete("/user/{id}")]
-async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|_| UserError::InternalError)?;
 
-    conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).expect("failed to delete user");
+    conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).map_err(|e| UserError::InternalError)?;
 
     return Ok(HttpResponse::Ok())
 }
 
 #[get("/posts/{id}")]
-async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let post_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let post_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
     // TODO query pipelining or something optimization thing
-    let post: Post = conn.query_map(format!("SELECT title, body, user_id FROM post WHERE id = {post_id};"), |(title, body, user_id)| {
+    let post = conn.query_map(format!("SELECT title, body, user_id FROM post WHERE id = {post_id};"), |(title, body, user_id)| {
         Post {
             title,
             body,
             user_id,
         }
-    }).expect("failed to get post").pop().unwrap();
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
 
     let user: User = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {};", post.user_id), |(name, email, age)| {
         User {
@@ -113,7 +148,7 @@ async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
             email,
             age,
         }
-    }).expect("failed to get user").pop().unwrap();
+    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError).map_err(|e| e)?;
 
     let post_user: PostUser = PostUser{
         title: post.title,
@@ -126,33 +161,32 @@ async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<
 }
 
 #[post("/posts")]
-async fn create_post(web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn create_post(web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
-    conn.exec_drop(format!("INSERT INTO post (title, body, user_id) VALUES ('{}', '{}', '{}');", post_data.title, post_data.body, post_data.user_id), ()).expect("failed to create post");
+    conn.exec_drop(format!("INSERT INTO post (title, body, user_id) VALUES ('{}', '{}', '{}');", post_data.title, post_data.body, post_data.user_id), ()).map_err(|_| UserError::InternalError)?;
 
     return Ok(HttpResponse::Created())
 }
 
 // TODO add auth especially
 #[put("/posts/{id}")]
-async fn update_post(req: HttpRequest, web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn update_post(req: HttpRequest, web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
-    let post_id: u64 = req.match_info().get("id").unwrap().parse::<u64>().unwrap();
+    let post_id: u64 = req.match_info().get("id").unwrap().parse::<u64>().map_err(|e| UserError::InternalError)?;
 
-    conn.exec_drop(format!("UPDATE post SET title = '{}', body = '{}' WHERE id = {};", post_data.title, post_data.body, post_id), ()).expect("failed to update");
-
+    conn.exec_drop(format!("UPDATE post SET title = '{}', body = '{}' WHERE id = {};", post_data.title, post_data.body, post_id), ()).map_err(|_| UserError::InternalError)?;
     return Ok(HttpResponse::Ok())
 }
 
 #[delete("/posts/{id}")]
-async fn delete_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder> {
-    let mut conn = data.get_conn().expect("failed to get connection");
+async fn delete_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
+    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
 
-    let post_id: u64 = req.match_info().get("id").unwrap().parse().unwrap();
+    let post_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
 
-    conn.exec_drop(format!("DELETE FROM post WHERE id = {post_id};"), ()).expect("failed to delete");
+    conn.exec_drop(format!("DELETE FROM post WHERE id = {post_id};"), ()).map_err(|_| UserError::InternalError)?;
 
     return Ok(HttpResponse::Ok())
 }

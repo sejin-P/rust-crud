@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 actix-web = { git = "https://github.com/actix/actix-web", tag = "web-v4.3.1", version = "4.3.1" }
+derive_more = "0.99.17"
 mysql = "24.0.0"
 serde = "1.0.183"
