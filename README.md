@@ -13,6 +13,7 @@
 2. 08/20/2023: Fix compile errors in 1, Add POST, DELETE, PUT user api
 3. 08/26/2023: CRUD of Post entity
 4. 09/02/2023: Exception handling + middlewares - best practices
+5. 09/17/2023: Dockerization
 
 
 
@@ -24,7 +25,7 @@
 5. Use multithreading + async/await even it's not necessary
 6. Add hot reload
 7. Add auth
-8. Db connection pooling
+8. Db connection pooling - already did it
 9. Add Dockerization
 
 
