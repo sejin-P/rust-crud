@@ -1,4 +1,5 @@
 pub mod model;
+pub mod errors;
 
 use std::fmt::Display;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, http::{header::ContentType, StatusCode}, put, delete, error};
@@ -6,11 +7,11 @@ use actix_web::middleware::Logger;
 use mysql::{Pool};
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
-use derive_more::{Display, Error};
 
 use crate::model::post::Post;
 use crate::model::user::User;
 use crate::model::post_user::PostUser;
+use crate::errors::user_error::{UserError, handle_sql_err};
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -20,39 +21,6 @@ async fn hello() -> impl Responder {
 #[post("/echo")]
 async fn echo(req_body: String) -> impl Responder {
     HttpResponse::Ok().body(req_body)
-}
-
-#[derive(Debug, Display, Error)]
-enum UserError {
-    #[display(fmt = "An internal error occurred. Please try again later.")]
-    InternalError,
-    #[display(fmt = "Could not find data of {}, id {}.", name, id)]
-    NotFoundError {name: &'static str, id: u64 },
-    #[display(fmt = "Invalid request.")]
-    ValidationError,
-    #[display(fmt = "Unauthorized.")]
-    UnauthorizedError,
-}
-
-impl error::ResponseError for UserError {
-    fn status_code(&self) -> StatusCode {
-        match *self {
-            UserError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            UserError::NotFoundError{name, id} => StatusCode::NOT_FOUND,
-            UserError::ValidationError => StatusCode::BAD_REQUEST,
-            UserError::UnauthorizedError => StatusCode::UNAUTHORIZED,
-        }
-    }
-
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code())
-            .insert_header(ContentType::html())
-            .body(self.to_string())
-    }
-}
-
-fn handle_sql_err(e: mysql::Error) -> UserError {
-    return UserError::InternalError
 }
 
 #[get("/user/{id}")]
