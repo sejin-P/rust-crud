@@ -1,146 +1,16 @@
 pub mod model;
 pub mod errors;
+pub mod api;
 
 use std::fmt::Display;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, http::{header::ContentType, StatusCode}, put, delete, error};
+use actix_web::{ web, App, HttpServer, Responder};
 use actix_web::middleware::Logger;
 use mysql::{Pool};
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
 
-use crate::model::post::Post;
-use crate::model::user::User;
-use crate::model::post_user::PostUser;
-use crate::errors::user_error::{UserError, handle_sql_err};
-
-#[get("/")]
-async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
-}
-
-#[post("/echo")]
-async fn echo(req_body: String) -> impl Responder {
-    HttpResponse::Ok().body(req_body)
-}
-
-#[get("/user/{id}")]
-async fn get_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    let user = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {user_id};"), |(name, email, age)| {
-        User {
-            name,
-            email,
-            age,
-        }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "user", id: user_id}).map_err(|e| e)?;
-
-    return Ok(web::Json(user))
-}
-
-#[post("/user")]
-async fn create_user(web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-    let name = user_data.name;
-    let email = user_data.email;
-    let age = user_data.age;
-
-    conn.exec_drop(format!("INSERT INTO user (name, email, age) VALUES ('{name}', '{email}', {age});"), ()).map_err(|e| UserError::InternalError)?;
-
-    return Ok(HttpResponse::Created())
-}
-
-#[put("/user/{id}")]
-async fn update_user(req: HttpRequest, web::Json(user_data): web::Json<User>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|_| UserError::InternalError)?;
-    let name = user_data.name;
-    let age = user_data.age;
-
-    conn.exec_drop(format!("UPDATE user SET name = '{name}', age = {age} WHERE id = {user_id};"), ()).map_err(|e| UserError::InternalError)?;
-
-    return Ok(HttpResponse::Ok())
-}
-
-#[delete("/user/{id}")]
-async fn delete_user(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    let user_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|_| UserError::InternalError)?;
-
-    conn.exec_drop(format!("DELETE FROM user WHERE id = {user_id};"), ()).map_err(|e| UserError::InternalError)?;
-
-    return Ok(HttpResponse::Ok())
-}
-
-#[get("/posts/{id}")]
-async fn get_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let post_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    // TODO query pipelining or something optimization thing
-    let post = conn.query_map(format!("SELECT title, body, user_id FROM post WHERE id = {post_id};"), |(title, body, user_id)| {
-        Post {
-            title,
-            body,
-            user_id,
-        }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "post", id: post_id}).map_err(|e| e)?;
-
-    let user: User = conn.query_map(format!("SELECT name, email, age FROM user WHERE id = {};", post.user_id), |(name, email, age)| {
-        User {
-            name,
-            email,
-            age,
-        }
-    }).map_err(handle_sql_err)?.pop().ok_or(UserError::NotFoundError{name: "user", id: post.user_id}).map_err(|e| e)?;
-
-    let post_user: PostUser = PostUser{
-        title: post.title,
-        body: post.body,
-        user_name: user.name,
-        user_email: user.email,
-    };
-
-    return Ok(web::Json(post_user))
-}
-
-#[post("/posts")]
-async fn create_post(web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    conn.exec_drop(format!("INSERT INTO post (title, body, user_id) VALUES ('{}', '{}', '{}');", post_data.title, post_data.body, post_data.user_id), ()).map_err(|_| UserError::InternalError)?;
-
-    return Ok(HttpResponse::Created())
-}
-
-// TODO add auth especially
-#[put("/posts/{id}")]
-async fn update_post(req: HttpRequest, web::Json(post_data): web::Json<Post>, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    let post_id: u64 = req.match_info().get("id").unwrap().parse::<u64>().map_err(|e| UserError::InternalError)?;
-
-    conn.exec_drop(format!("UPDATE post SET title = '{}', body = '{}' WHERE id = {};", post_data.title, post_data.body, post_id), ()).map_err(|_| UserError::InternalError)?;
-    return Ok(HttpResponse::Ok())
-}
-
-#[delete("/posts/{id}")]
-async fn delete_post(req: HttpRequest, data: web::Data<Pool>) -> actix_web::Result<impl Responder, UserError> {
-    let mut conn = data.get_conn().map_err(|e| UserError::InternalError)?;
-
-    let post_id: u64 = req.match_info().get("id").unwrap().parse().map_err(|e| UserError::InternalError)?;
-
-    conn.exec_drop(format!("DELETE FROM post WHERE id = {post_id};"), ()).map_err(|_| UserError::InternalError)?;
-
-    return Ok(HttpResponse::Ok())
-}
-
-async fn manual_hello() -> impl Responder {
-    HttpResponse::Ok().body("Hey there!")
-}
+use crate::api::user;
+use crate::api::post;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -158,17 +28,14 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(logger)
             .app_data(shared_data.clone())
-            .service(hello)
-            .service(echo)
-            .service(get_user)
-            .service(create_user)
-            .service(update_user)
-            .service(delete_user)
-            .service(get_post)
-            .service(create_post)
-            .service(update_post)
-            .service(delete_post)
-            .route("/", web::get().to(manual_hello))
+            .service(user::get_user)
+            .service(user::create_user)
+            .service(user::update_user)
+            .service(user::delete_user)
+            .service(post::get_post)
+            .service(post::create_post)
+            .service(post::update_post)
+            .service(post::delete_post)
     })
         .bind(("127.0.0.1", 8080))?
         .run()
