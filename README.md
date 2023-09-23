@@ -14,6 +14,7 @@
 3. 08/26/2023: CRUD of Post entity
 4. 09/02/2023: Exception handling + middlewares - best practices
 5. 09/17/2023: Dockerization
+6. 09/23/2023: Refactoring - divide into modules
 
 
 

@@ -1,3 +1,5 @@
+pub mod model;
+
 use std::fmt::Display;
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, HttpRequest, http::{header::ContentType, StatusCode}, put, delete, error};
 use actix_web::middleware::Logger;
@@ -5,6 +7,10 @@ use mysql::{Pool};
 use mysql::prelude::Queryable;
 use serde::{Deserialize, Serialize};
 use derive_more::{Display, Error};
+
+use crate::model::post::Post;
+use crate::model::user::User;
+use crate::model::post_user::PostUser;
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -15,34 +21,6 @@ async fn hello() -> impl Responder {
 async fn echo(req_body: String) -> impl Responder {
     HttpResponse::Ok().body(req_body)
 }
-
-// TODO refactoring user model, api
-#[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-pub struct User {
-    pub name: String,
-    #[serde(default)]
-    pub email: String,
-    pub age: u8,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-pub struct Post {
-    pub title: String,
-    pub body: String,
-    pub user_id: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[allow(non_snake_case)]
-pub struct PostUser {
-    pub title: String,
-    pub body: String,
-    pub user_name: String,
-    pub user_email: String,
-}
-
 
 #[derive(Debug, Display, Error)]
 enum UserError {
